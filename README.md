@@ -3,7 +3,7 @@ Tools for building, manipulating and representing radial build for fusion power 
 
 [Early vision](https://docs.google.com/presentation/d/1yDzG23BL8KTqxQCjatCVnmPRx0kgijyP6wGbssfKwiQ/edit#slide=id.p)
 
-See examples folders for demonstrations of the tools python. These examples
+See examples folders for demonstrations of the tools using python. These examples
 also write a corresponding yml file.
 
 These yml files can then be used as inputs to the command line interface to
