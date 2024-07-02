@@ -1,7 +1,6 @@
 import openmc
 from radial_build_tools import ToroidalModel
 
-# wistell d esque values
 a = 800
 b = 300
 c = 100
@@ -26,14 +25,21 @@ PbLi.set_density("g/cm3", 9.806)
 materials = openmc.Materials([RAFM, PbLi, W])
 
 build = {
-    "sol": {"thickness": 5, "material": None, "description": "Vacuum"},
-    "FW": {"thickness": 4, "material": RAFM, "description": RAFM.name},
-    "Breeder": {"thickness": 20, "material": PbLi, "description": PbLi.name},
-    "bogus layer": {"thickness":0, "description":'this layer will be skipped'},
-    "shield": {"thickness": 20, "material": W, "description": W.name},
+    "sol": {"thickness": 5, "description": "Vacuum"},
+    "FW": {"thickness": 4, "composition": {"RAFM": 1}},
+    "Breeder": {"thickness": 20, "composition": {"RAFM": 0.1, "PbLi": 0.9}},
+    "bogus layer": {
+        "thickness": 0,
+        "description": "this layer will be skipped due to zero thickness",
+    },
+    "shield": {
+        "thickness": 20,
+        "composition": {"Tungsten": 1.0},
+        "description": "This shield is a bit silly",
+    },
 }
 
-toroidal_model = ToroidalModel(build, 1000, 100, 100)
+toroidal_model = ToroidalModel(build, 1000, 100, 100, materials)
 model, cells = toroidal_model.get_openmc_model()
 model.export_to_model_xml()
 
@@ -41,3 +47,5 @@ model.export_to_model_xml()
 toroidal_model.get_radial_build_plot(
     title="Toroidal Model Example", size=(4, 3)
 ).to_png()
+
+toroidal_model.write_yml()
