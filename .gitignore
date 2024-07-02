@@ -164,3 +164,4 @@ cython_debug/
 *.xml
 *.pkl
 !ExampleRadialBuild.yml
+!toroidal_model.yml
