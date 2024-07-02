@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 import openmc
 import textwrap
+import os
 
 
 class RadialBuildPlot(object):
@@ -298,7 +299,7 @@ class ToroidalModel(object):
             self.materials_path = materials
         else:
             self.input_materials = materials
-            self.materials_path = "input_materials.xml"
+            self.materials_path = os.getcwd() + "/input_materials.xml"
             materials.export_to_xml("input_materials.xml")
 
         self.assign_materials()
@@ -521,6 +522,20 @@ def parse_args():
 
     parser.add_argument("filename", help="YAML file defining radial build")
 
+    parser.add_argument(
+        "-p",
+        "--plot",
+        action="store_true",
+        help=("make a radial build plot from the input yml"),
+    )
+
+    parser.add_argument(
+        "-tm",
+        "--toroidal_model",
+        action="store_true",
+        help=("make an OpenMC model toroidal model from the input yml"),
+    )
+
     return parser.parse_args()
 
 
@@ -550,14 +565,24 @@ def main():
     data_dict = data_default.copy()
     data_dict.update(data)
 
-    RadialBuildPlot(
-        title=data_dict["title"],
-        colors=data_dict["colors"],
-        max_characters=data_dict["max_characters"],
-        max_thickness=data_dict["max_thickness"],
-        size=data_dict["size"],
-        unit=data_dict["unit"],
-    ).to_png()
+    if args.plot:
+        RadialBuildPlot(
+            title=data_dict["title"],
+            colors=data_dict["colors"],
+            max_characters=data_dict["max_characters"],
+            max_thickness=data_dict["max_thickness"],
+            size=data_dict["size"],
+            unit=data_dict["unit"],
+        ).to_png()
+
+    if args.toroidal_model:
+        ToroidalModel(
+            build=data_dict["build"],
+            major_rad=data_dict["major_rad"],
+            minor_rad_z=data_dict["minor_rad_z"],
+            minor_rad_xy=data_dict["minor_rad_xy"],
+            materials=data_dict["materials_path"],
+        ).get_openmc_model()[0].export_to_model_xml()
 
 
 if __name__ == "__main__":
