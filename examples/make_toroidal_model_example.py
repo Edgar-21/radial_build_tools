@@ -1,5 +1,5 @@
 import openmc
-from radial_build_tools import ToroidalModel
+from radial_build_tools import ToroidalModel, RadialBuildPlot
 
 a = 800
 b = 300
@@ -42,10 +42,7 @@ build = {
 toroidal_model = ToroidalModel(build, 1000, 100, 100, materials)
 model, cells = toroidal_model.get_openmc_model()
 model.export_to_model_xml()
+toroidal_model.write_yml()
 
 # make a radial build plot of the model
-toroidal_model.get_radial_build_plot(
-    title="Toroidal Model Example", size=(4, 3)
-).to_png()
-
-toroidal_model.write_yml()
+rbp = RadialBuildPlot(build, "Toroidal Model Example", size=(4, 3))

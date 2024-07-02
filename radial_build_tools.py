@@ -490,43 +490,6 @@ class ToroidalModel(object):
         model = openmc.Model(geometry=self.geometry, materials=self.materials)
         return model, self.cell_dict
 
-    def get_radial_build_plot(
-        self,
-        title="radial_build",
-        colors=None,
-        max_characters=35,
-        max_thickness=1e6,
-        size=(8, 4),
-        unit="cm",
-    ):
-        """
-        Make a radial build plot object using the build dictionary of this model.
-
-        Arguments:
-            title (string): title for plot and filename to save to
-            colors (list of str): list of matplotlib color strings.
-                If specific colors are desired for each layer they can be added
-                here.
-            max_characters (float): maximum length of a line before wrapping the
-                text
-            max_thickness (float): maximum thickness of layer to display, useful
-                for reducing the total size of the figure.
-            size (iter of float): figure size, inches. (width, height)
-            unit (str): Unit of thickness values
-
-        Returns:
-            RadialBuildPlot (obj): radial build plot object.
-        """
-        return RadialBuildPlot(
-            self.build,
-            title=title,
-            colors=colors,
-            max_characters=max_characters,
-            max_thickness=max_thickness,
-            size=size,
-            unit=unit,
-        )
-
     def write_yml(self, filename="toroidal_model.yml"):
         """
         writes yml file defining this model.
