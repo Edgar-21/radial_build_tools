@@ -1,9 +1,9 @@
 import openmc
 from radial_build_tools import ToroidalModel, RadialBuildPlot
 
-a = 800
-b = 300
-c = 100
+major_rad = 800
+minor_rad_z = 300
+minor_rad_xy = 100
 # Define tungsten
 W = openmc.Material(name="Tungsten")
 W.add_element("W", 1.0)
@@ -39,10 +39,44 @@ build = {
     },
 }
 
-toroidal_model = ToroidalModel(build, 1000, 100, 100, materials)
+toroidal_model = ToroidalModel(
+    build, major_rad, minor_rad_z, minor_rad_xy, materials
+)
 model, cells = toroidal_model.get_openmc_model()
 model.export_to_model_xml()
 toroidal_model.write_yml()
 
 # make a radial build plot of the model
 rbp = RadialBuildPlot(build, "Toroidal Model Example", size=(4, 3))
+
+# demonstration of simple transport
+
+model.settings.batches = 10
+model.settings.particles = 1000
+model.settings.run_mode = "fixed source"
+
+breeder_filter = openmc.CellFilter(cells["Breeder"])
+
+tbr_tally = openmc.Tally(name="tbr_tally")
+tbr_tally.filters = [breeder_filter]
+tbr_tally.nuclides = ["Li6", "Li7"]
+tbr_tally.scores = ["H3-production"]
+
+model.tallies = [tbr_tally]
+
+# please use your own, more detailed source. This uses a point source
+# on the x axis at the major radius
+source = openmc.IndependentSource()
+source.space = openmc.stats.Point((major_rad, 0, 0))
+source.angle = openmc.stats.Isotropic()
+source.energy = openmc.stats.Discrete([14.1e6], [1])
+model.settings.source = source
+
+statepoint = model.run()
+
+with openmc.StatePoint(statepoint) as sp:
+    tbr_tally = sp.get_tally(name="tbr_tally")
+
+tbr = tbr_tally.get_reshaped_data("mean").sum()
+
+print("tbr: ", tbr)
