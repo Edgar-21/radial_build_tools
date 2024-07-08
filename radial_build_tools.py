@@ -6,6 +6,7 @@ import argparse
 import numpy as np
 import openmc
 import textwrap
+import os
 
 
 class RadialBuildPlot(object):
@@ -51,6 +52,8 @@ class RadialBuildPlot(object):
             self.colors = list(matplotlib.colors.XKCD_COLORS.values())[
                 0 : len(self.build)
             ]
+        else:
+            self.colors = colors
         self.max_characters = max_characters
         self.max_thickness = max_thickness
         self.size = size
@@ -255,39 +258,142 @@ class ToroidalModel(object):
         build (dict): {"layer name": {
                             "thickness": (float),
                             "composition": {
-                                "material name": fraction (float)
-                                },
-                            "material": OpenMC material
+                                "material name": volume fraction (float),
+                            },
+                            "description": (str)
+                        }
                     }
-                }
-            The dict corresponding to each "layer_name" key may be empty,
-            or have any combination of entries.
+            The keys are used as follows:
+            "layer name": becomes the name of the cell in the toroidal model.
+                also used in plotting the radial build to label the layer.
+            "thickness": becomes the thickness of the cell in the toroidal
+                model. Also used in plotting to size the layers.
+            "composition": each "material name" key should correspond to a
+                material name in the OpenMC materials library associated with
+                this model. The corresponding value is the volume fraction that
+                that material has in that layer. The materials in the
+                composition key will be mixed to make a homogenized composition,
+                and assigned to the cell in the toroidal model. This is also
+                used to create the material description when plotting.
 
+                To have a layer with vacuum/void do not include the
+                'composition' key.
+
+            "description" : an optional string providing additional information
+                about the layer, displayed in the plot.
+        major_rad (float): major radius of the torus
+        minor_rad_z (float): minor radius of the plasma region parallel to the
+            z axis
+        minor_rad_xy (float): minor radius of the plasma region perpendicular
+            to the z axis
+        materials (str or OpenMC Materials object): path to the OpenMC materials
+            xml file for this model, or the corresponding Materials OpenMC
+            object
     """
 
-    def __init__(self, build, a, b, c):
+    def __init__(self, build, major_rad, minor_rad_z, minor_rad_xy, materials):
         self.build = build
-        self.a = a
-        self.b = b
-        self.c = c
+        self.major_rad = major_rad
+        self.minor_rad_z = minor_rad_z
+        self.minor_rad_xy = minor_rad_xy
+        if isinstance(materials, str):
+            self.input_materials = openmc.Materials.from_xml(materials)
+            self.materials_path = materials
+        else:
+            self.input_materials = materials
+            self.materials_path = os.getcwd() + "/input_materials.xml"
+            materials.export_to_xml("input_materials.xml")
+
+        self.assign_materials()
+
+    def assign_materials(self):
+        """
+        Assign OpenMC material objects to each layer in the build dict,
+        mixing materials as necessary
+        """
+        for layer_name, layer_data in self.build.items():
+            if "composition" in layer_data:
+                materials = [
+                    self.get_material_by_name(mat_name)
+                    for mat_name in layer_data["composition"].keys()
+                ]
+                volume_fractions = list(layer_data["composition"].values())
+                material = self.mix_materials_by_volume(
+                    materials, volume_fractions
+                )
+                layer_data["material"] = material
+            else:
+                layer_data["material"] = None
+
+    def get_material_by_name(self, material):
+        """
+        Search the materials object for a material with a matching name. Openmc
+        allows duplicate names, and names are not required, be advised.
+
+        Arguments:
+            materials (OpenMC Materials Object): material library to search
+            material (string): name of material to be returned
+
+        Returns:
+            mat (OpenMC material object): material object with matching name
+        """
+        for mat in self.input_materials:
+            if mat.name == material:
+                return mat
+        # if this returns none, openmc will just assign vacuum to any cell
+        # using this material
+        raise ValueError(
+            f"no material name {material} was found in the library"
+        )
+
+    def mix_materials_by_volume(self, materials, volume_fractions):
+        """
+        Mix materials by volume using OpenMC.
+
+        Arguments:
+            materials (list of str): list of material names to mix.
+            fractions (list of float): list of volume fractions for each
+                respective material
+
+        Returns:
+            material (OpenMC material): the mixed material.
+        """
+        material = openmc.Material.mix_materials(
+            materials,
+            volume_fractions,
+            percent_type="vo",
+        )
+
+        material.name = "".join(
+            [
+                mat.name + str(vol_frac)
+                for mat, vol_frac in zip(materials, volume_fractions)
+            ]
+        )
+        return material
 
     def build_surfaces(self):
         """
         Build the surfaces representing the radial build using OpenMC CSG.
         """
-        a = self.a
-        b = self.b
-        c = self.c
         # build surfaces
         surfaces = {}
 
-        surfaces["plasma_surface"] = openmc.ZTorus(a=a, b=b, c=c)
+        major_rad = self.major_rad
+        minor_rad_z = self.minor_rad_z
+        minor_rad_xy = self.minor_rad_xy
+
+        surfaces["plasma_surface"] = openmc.ZTorus(
+            a=major_rad, b=minor_rad_z, c=minor_rad_xy
+        )
 
         for surface, surface_dict in self.build.items():
             if surface_dict["thickness"] != 0:
-                b += surface_dict["thickness"]
-                c += surface_dict["thickness"]
-                surfaces[surface] = openmc.ZTorus(a=a, b=b, c=c)
+                minor_rad_z += surface_dict["thickness"]
+                minor_rad_xy += surface_dict["thickness"]
+                surfaces[surface] = openmc.ZTorus(
+                    a=self.major_rad, b=self.minor_rad_z, c=self.minor_rad_xy
+                )
 
         self.surfaces = surfaces
 
@@ -387,42 +493,29 @@ class ToroidalModel(object):
         model = openmc.Model(geometry=self.geometry, materials=self.materials)
         return model, self.cell_dict
 
-    def get_radial_build_plot(
-        self,
-        title="radial_build",
-        colors=None,
-        max_characters=35,
-        max_thickness=1e6,
-        size=(8, 4),
-        unit="cm",
-    ):
+    def write_yml(self, filename="toroidal_model.yml"):
         """
-        Make a radial build plot object using the build dictionary of this model.
-
-        Arguments:
-            title (string): title for plot and filename to save to
-            colors (list of str): list of matplotlib color strings.
-                If specific colors are desired for each layer they can be added
-                here.
-            max_characters (float): maximum length of a line before wrapping the
-                text
-            max_thickness (float): maximum thickness of layer to display, useful
-                for reducing the total size of the figure.
-            size (iter of float): figure size, inches. (width, height)
-            unit (str): Unit of thickness values
-
-        Returns:
-            RadialBuildPlot (obj): radial build plot object.
+        writes yml file defining this model.
         """
-        return RadialBuildPlot(
-            self.build,
-            title=title,
-            colors=colors,
-            max_characters=max_characters,
-            max_thickness=max_thickness,
-            size=size,
-            unit=unit,
-        )
+
+        data_dict = self.__dict__
+
+        for layer_name, layer_data in data_dict["build"].items():
+            del layer_data["material"]
+
+        del data_dict["input_materials"]
+        del data_dict["surfaces"]
+        del data_dict["surf_list"]
+        del data_dict["regions"]
+        del data_dict["cell_list"]
+        del data_dict["cell_dict"]
+        del data_dict["geometry"]
+        del data_dict["materials"]
+
+        with open(filename, "w") as file:
+            yaml.safe_dump(
+                data_dict, file, default_flow_style=False, sort_keys=False
+            )
 
 
 def parse_args():
@@ -430,6 +523,20 @@ def parse_args():
     parser = argparse.ArgumentParser(prog="plot_radial_build")
 
     parser.add_argument("filename", help="YAML file defining radial build")
+
+    parser.add_argument(
+        "-p",
+        "--plot",
+        action="store_true",
+        help=("make a radial build plot from the input yml"),
+    )
+
+    parser.add_argument(
+        "-tm",
+        "--toroidal_model",
+        action="store_true",
+        help=("make an OpenMC model toroidal model from the input yml"),
+    )
 
     return parser.parse_args()
 
@@ -460,14 +567,24 @@ def main():
     data_dict = data_default.copy()
     data_dict.update(data)
 
-    RadialBuildPlot(
-        title=data_dict["title"],
-        colors=data_dict["colors"],
-        max_characters=data_dict["max_characters"],
-        max_thickness=data_dict["max_thickness"],
-        size=data_dict["size"],
-        unit=data_dict["unit"],
-    ).to_png()
+    if args.plot:
+        RadialBuildPlot(
+            title=data_dict["title"],
+            colors=data_dict["colors"],
+            max_characters=data_dict["max_characters"],
+            max_thickness=data_dict["max_thickness"],
+            size=data_dict["size"],
+            unit=data_dict["unit"],
+        ).to_png()
+
+    if args.toroidal_model:
+        ToroidalModel(
+            build=data_dict["build"],
+            major_rad=data_dict["major_rad"],
+            minor_rad_z=data_dict["minor_rad_z"],
+            minor_rad_xy=data_dict["minor_rad_xy"],
+            materials=data_dict["materials_path"],
+        ).get_openmc_model()[0].export_to_model_xml()
 
 
 if __name__ == "__main__":
