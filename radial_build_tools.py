@@ -52,6 +52,8 @@ class RadialBuildPlot(object):
             self.colors = list(matplotlib.colors.XKCD_COLORS.values())[
                 0 : len(self.build)
             ]
+        else:
+            self.colors = colors
         self.max_characters = max_characters
         self.max_thickness = max_thickness
         self.size = size
